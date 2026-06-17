@@ -1,0 +1,71 @@
+name: Draw Mosaic
+
+on:
+  workflow_dispatch:
+    inputs:
+      text:
+        description: "Text to draw"
+        required: false
+        default: "GAY"
+      commits_per_pixel:
+        description: "Commits per pixel (25 = max dark)"
+        required: false
+        default: "25"
+      year:
+        description: "Target year (empty = auto)"
+        required: false
+        default: ""
+      start_week:
+        description: "Start week (empty = auto-center)"
+        required: false
+        default: ""
+      dry_run:
+        description: "Preview only (no commits)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  draw:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "Zymlex"
+          git config user.email "292387835+Zymlex@users.noreply.github.com"
+
+      - name: Clean old contribution commits
+        run: |
+          FIRST=$(git log HEAD --format="%H %s" --reverse | grep -E "^[a-f0-9]+ contribution [0-9]+" | head -1 | awk '{print $1}')
+          if [ -n "$FIRST" ]; then
+            BASE=$(git rev-parse "${FIRST}^")
+            echo "Resetting to: $BASE"
+            git reset --hard "$BASE"
+          else
+            echo "Nothing to clean"
+          fi
+          git reflog expire --expire=now --all
+          git gc --prune=now --quiet
+
+      - name: Draw text on contribution graph
+        run: node draw-mosaic.mjs
+        env:
+          TEXT: ${{ inputs.text || 'GAY' }}
+          COMMITS_PER_PIXEL: ${{ inputs.commits_per_pixel || '25' }}
+          YEAR: ${{ inputs.year || '' }}
+          START_WEEK: ${{ inputs.start_week || '' }}
+          DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+
+      - name: Push commits
+        if: ${{ inputs.dry_run != true }}
+        run: |
+          git remote set-url origin "https://x-access-token:${{ secrets.GH_PAT }}@github.com/Zymlex/GayArt7.git"
+          git push --force
